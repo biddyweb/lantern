@@ -97,7 +97,6 @@ func doMain() error {
 
 	// Schedule cleanup actions
 	defer logging.Close()
-	defer pacOff()
 	defer quitSystray()
 
 	i18nInit()
@@ -215,6 +214,7 @@ func runClientProxy(cfg *config.Config) {
 	logging.Configure(cfg, version, buildDate)
 	settings.Configure(cfg, version, buildDate)
 	proxiedsites.Configure(cfg.ProxiedSites)
+	ServeProxyAllPacFile(cfg.Client.ProxyAll)
 
 	if hqfd == nil {
 		log.Errorf("No fronted dialer available, not enabling geolocation, stats or analytics")
@@ -235,6 +235,9 @@ func runClientProxy(cfg *config.Config) {
 			proxiedsites.Configure(cfg.ProxiedSites)
 			// Note - we deliberately ignore the error from statreporter.Configure here
 			statreporter.Configure(cfg.Stats)
+
+			log.Debugf("Proxy all traffic or not: %v", cfg.Client.ProxyAll)
+			ServeProxyAllPacFile(cfg.Client.ProxyAll)
 
 			hqfd = client.Configure(cfg.Client)
 
@@ -258,6 +261,7 @@ func runClientProxy(cfg *config.Config) {
 	watchDirectAddrs()
 
 	go func() {
+		defer pacOff()
 		exit(client.ListenAndServe(pacOn))
 	}()
 }
