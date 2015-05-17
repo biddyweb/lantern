@@ -195,9 +195,6 @@ func runClientProxy(cfg *config.Config) {
 		WriteTimeout: 0,
 	}
 
-	// Update client configuration and get the highest QOS dialer available.
-	hqfd := client.Configure(cfg.Client)
-
 	// Start user interface.
 	if cfg.UIAddr != "" {
 		if err = ui.Start(cfg.UIAddr); err != nil {
@@ -210,49 +207,12 @@ func runClientProxy(cfg *config.Config) {
 		}
 	}
 
-	autoupdate.Configure(cfg)
-	logging.Configure(cfg, version, buildDate)
-	settings.Configure(cfg, version, buildDate)
-	proxiedsites.Configure(cfg.ProxiedSites)
-	ServeProxyAllPacFile(cfg.Client.ProxyAll)
-
-	if hqfd == nil {
-		log.Errorf("No fronted dialer available, not enabling geolocation, stats or analytics")
-	} else {
-		// An *http.Client that uses the highest QOS dialer.
-		hqfdClient := hqfd.DirectHttpClient()
-
-		geolookup.Configure(hqfdClient)
-		statserver.Configure(hqfdClient)
-		analytics.Configure(cfg, false, hqfdClient)
-	}
-
+	applyClientConfig(client, cfg)
 	// Continually poll for config updates and update client accordingly
 	go func() {
 		for {
 			cfg := <-configUpdates
-
-			proxiedsites.Configure(cfg.ProxiedSites)
-			// Note - we deliberately ignore the error from statreporter.Configure here
-			statreporter.Configure(cfg.Stats)
-
-			log.Debugf("Proxy all traffic or not: %v", cfg.Client.ProxyAll)
-			ServeProxyAllPacFile(cfg.Client.ProxyAll)
-
-			hqfd = client.Configure(cfg.Client)
-
-			if hqfd != nil {
-				// Create and pass the *http.Client that uses the highest QOS dialer to
-				// critical modules that require continual comunication with external
-				// services.
-				hqfdClient := hqfd.DirectHttpClient()
-
-				geolookup.Configure(hqfdClient)
-				statserver.Configure(hqfdClient)
-				settings.Configure(cfg, version, buildDate)
-				logging.Configure(cfg, version, buildDate)
-				autoupdate.Configure(cfg)
-			}
+			applyClientConfig(client, cfg)
 		}
 	}()
 
@@ -264,6 +224,33 @@ func runClientProxy(cfg *config.Config) {
 		defer pacOff()
 		exit(client.ListenAndServe(pacOn))
 	}()
+}
+
+func applyClientConfig(client *client.Client, cfg *config.Config) {
+	autoupdate.Configure(cfg)
+	logging.Configure(cfg, version, buildDate)
+	settings.Configure(cfg, version, buildDate)
+	proxiedsites.Configure(cfg.ProxiedSites)
+	log.Debugf("Proxy all traffic or not: %v", cfg.Client.ProxyAll)
+	ServeProxyAllPacFile(cfg.Client.ProxyAll)
+	// Note - we deliberately ignore the error from statreporter.Configure here
+	statreporter.Configure(cfg.Stats)
+
+	// Update client configuration and get the highest QOS dialer available.
+	hqfd := client.Configure(cfg.Client)
+	if hqfd == nil {
+		log.Errorf("No fronted dialer available, not enabling geolocation, stats or analytics")
+	} else {
+		// Create and pass the *http.Client that uses the highest QOS dialer to
+		// critical modules that require continual comunication with external
+		// services.
+		hqfdClient := hqfd.DirectHttpClient()
+
+		geolookup.Configure(hqfdClient)
+		statserver.Configure(hqfdClient)
+		analytics.Configure(cfg, false, hqfdClient)
+	}
+
 }
 
 // Runs the server-side proxy
